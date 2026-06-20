@@ -2,7 +2,8 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from models import User, UserRole
+from models import User
+from database import SessionLocal
 
 
 class TestLogin:
@@ -102,10 +103,16 @@ class TestPermissionLevels:
 
     def test_viewer_can_read_devices(self, client, admin_token, viewer_token):
         # Create device as admin
-        client.post("/api/devices", json={
+        resp = client.post("/api/devices", json={
             "name": "SW-01", "device_type": "交换机",
             "ip_address": "10.0.0.1", "accounts": []
         }, headers=admin_token)
+        did = resp.json()["id"]
+        # Admin assigns device to viewer
+        from models import DeviceVisibility
+        db = SessionLocal()
+        db.add(DeviceVisibility(user_id=2, device_id=did))  # viewer is user #2
+        db.commit(); db.close()
         # Read as viewer
         resp = client.get("/api/devices", headers=viewer_token)
         assert resp.status_code == 200

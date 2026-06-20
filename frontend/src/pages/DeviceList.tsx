@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Table, Button, Input, Select, Space, Tag, Card, Popconfirm, message, Tooltip } from "antd";
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, ReloadOutlined, EyeOutlined } from "@ant-design/icons";
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, ReloadOutlined, EyeOutlined, DownloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useNavigate } from "react-router-dom";
 import api from "../api/client";
@@ -18,9 +18,17 @@ export default function DeviceList() {
   const [page, setPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [typeOptions, setTypeOptions] = useState<string[]>(["服务器","交换机","纵加设备","路由器","防火墙","存储设备","其他"]);
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const canEdit = user.role === "admin" || user.role === "editor";
+
+  useEffect(() => {
+    api.get("/config/device_types").then(r => {
+      const vals = r.data?.map((i: any) => i.value) || [];
+      setTypeOptions(prev => [...new Set([...prev, ...vals])]);
+    }).catch(() => {});
+  }, []);
 
   const fetchDevices = useCallback(async () => {
     setLoading(true);
@@ -46,6 +54,17 @@ export default function DeviceList() {
       a.download = "设备列表_" + new Date().toISOString().slice(0, 10) + ".xlsx";
       a.click(); URL.revokeObjectURL(url);
       message.success("导出成功");
+    } catch { message.error("导出失败"); }
+  };
+
+  const handleExportAll = async () => {
+    try {
+      const res = await api.post("/export/all", {}, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a"); a.href = url;
+      a.download = "全部数据_" + new Date().toISOString().slice(0, 10) + ".xlsx";
+      a.click(); URL.revokeObjectURL(url);
+      message.success("导出成功（含密码列表+用户列表）");
     } catch { message.error("导出失败"); }
   };
 
@@ -97,7 +116,7 @@ export default function DeviceList() {
               onChange={(e) => { setSearch(e.target.value); setPage(1); }} allowClear style={{ width: 220 }} />
             <Select placeholder="设备类型" value={typeFilter || undefined} allowClear style={{ width: 130 }}
               onChange={(v) => { setTypeFilter(v || ""); setPage(1); }}
-              options={["服务器","交换机","纵加设备","路由器","防火墙","存储设备","其他"].map(t=>({label:t,value:t}))} />
+              options={typeOptions.map(t=>({label:t,value:t}))} />
             <Button icon={<ReloadOutlined />} onClick={fetchDevices}>刷新</Button>
           </Space>
           <Space>
@@ -106,6 +125,7 @@ export default function DeviceList() {
               <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate("/devices/new")}>添加设备</Button>
             </>)}
             <Button icon={<ExportOutlined />} onClick={handleExport}>导出</Button>
+            {user.role === "admin" && <Button icon={<DownloadOutlined />} onClick={handleExportAll}>导出全部</Button>}
           </Space>
         </Space>
       </Card>

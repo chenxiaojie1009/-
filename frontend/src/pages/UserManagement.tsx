@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
 import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, Popconfirm, message, Typography } from "antd";
-import { TeamOutlined, PlusOutlined, KeyOutlined, EditOutlined } from "@ant-design/icons";
+import { TeamOutlined, PlusOutlined, KeyOutlined, EditOutlined, DownloadOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
 const { Title } = Typography;
 const roleColors: Record<string, string> = { admin: "red", editor: "blue", viewer: "green" };
-const roleLabels: Record<string, string> = { admin: "管理员", editor: "编辑者", viewer: "查看者" };
 
 interface UserRecord {
   id: number; username: string; display_name: string; role: string;
@@ -23,13 +22,22 @@ export default function UserManagement() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [resetForm] = Form.useForm();
+  const [roleOptions, setRoleOptions] = useState<Record<string, string>>({"admin":"管理员","editor":"编辑者","viewer":"查看者"});
 
   const fetchUsers = async () => {
     setLoading(true);
     try { const res = await api.get("/users"); setData(res.data || []); }
     catch { /* keep existing data on error */ } finally { setLoading(false); }
   };
-  useEffect(() => { fetchUsers(); }, []);
+
+  useEffect(() => {
+    fetchUsers();
+    api.get("/config/user_roles").then(r => {
+      const map: Record<string, string> = {"admin":"管理员","editor":"编辑者","viewer":"查看者"};
+      (r.data || []).forEach((i: any) => { if (!map[i.value]) map[i.value] = i.value; });
+      setRoleOptions(map);
+    }).catch(() => {});
+  }, []);
 
   const handleCreate = async () => {
     try {
@@ -82,10 +90,21 @@ export default function UserManagement() {
     catch { message.error("删除失败"); }
   };
 
+  const handleExportAll = async () => {
+    try {
+      const res = await api.post("/export/all", {}, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a"); a.href = url;
+      a.download = "全部数据_" + new Date().toISOString().slice(0, 10) + ".xlsx";
+      a.click(); URL.revokeObjectURL(url);
+      message.success("导出成功（含密码列表+用户列表）");
+    } catch { message.error("导出失败"); }
+  };
+
   const columns = [
     { title: "用户名", dataIndex: "username", width: 120 },
     { title: "显示名", dataIndex: "display_name", width: 120 },
-    { title: "角色", dataIndex: "role", width: 80, render: (v: string) => <Tag color={roleColors[v]}>{roleLabels[v]}</Tag> },
+    { title: "角色", dataIndex: "role", width: 80, render: (v: string) => <Tag color={roleColors[v]}>{roleOptions[v] || v}</Tag> },
     { title: "状态", dataIndex: "is_active", width: 70, render: (v: boolean) => v ? <Tag color="success">正常</Tag> : <Tag color="error">禁用</Tag> },
     { title: "下次改密", dataIndex: "must_change_password", width: 80, render: (v: boolean) => v ? <Tag color="warning">需要</Tag> : <Tag>-</Tag> },
     { title: "操作", width: 300,
@@ -119,7 +138,10 @@ export default function UserManagement() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <Title level={4} style={{ margin: 0 }}><TeamOutlined style={{ marginRight: 8 }} />用户管理</Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>添加用户</Button>
+        <Space>
+          <Button icon={<DownloadOutlined />} onClick={handleExportAll}>导出全部</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>添加用户</Button>
+        </Space>
       </div>
       <Card>
         <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={{ pageSize: 15 }} locale={{ emptyText: "暂无用户" }} />
@@ -137,7 +159,7 @@ export default function UserManagement() {
           </Form.Item>
           <Form.Item name="display_name" label="显示名称"><Input placeholder="可选" /></Form.Item>
           <Form.Item name="role" label="角色" initialValue="viewer" rules={[{ required: true }]}>
-            <Select options={Object.entries(roleLabels).map(([k, v]) => ({ label: v, value: k }))} />
+            <Select options={Object.entries(roleOptions).map(([k, v]) => ({ label: v, value: k }))} />
           </Form.Item>
         </Form>
       </Modal>
@@ -150,7 +172,7 @@ export default function UserManagement() {
             <Input placeholder="显示名称" />
           </Form.Item>
           <Form.Item name="role" label="角色" initialValue="viewer" rules={[{ required: true }]}>
-            <Select options={Object.entries(roleLabels).map(([k, v]) => ({ label: v, value: k }))} />
+            <Select options={Object.entries(roleOptions).map(([k, v]) => ({ label: v, value: k }))} />
           </Form.Item>
           <Form.Item name="password" label="新密码（留空不修改）" rules={[{ min: 6, message: "至少6位" }]}>
             <Input.Password placeholder="留空则不修改密码" />

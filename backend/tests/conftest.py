@@ -41,12 +41,12 @@ def admin_token(client):
 
 @pytest.fixture
 def viewer_token(client):
-    from models import User, UserRole
+    from models import User
     from auth import hash_password
     db = SessionLocal()
     from main import init_admin; init_admin(db)
     viewer = User(username="viewer", password_hash=hash_password("viewer123"),
-                  display_name="Viewer", role=UserRole.VIEWER)
+                  display_name="Viewer", role="viewer")
     db.add(viewer); db.commit(); db.close()
     resp = client.post("/api/auth/login", json={"username": "viewer", "password": "viewer123"})
     assert resp.status_code == 200
@@ -55,12 +55,12 @@ def viewer_token(client):
 
 @pytest.fixture
 def editor_token(client):
-    from models import User, UserRole
+    from models import User
     from auth import hash_password
     db = SessionLocal()
     from main import init_admin; init_admin(db)
     editor = User(username="editor", password_hash=hash_password("editor123"),
-                  display_name="Editor", role=UserRole.EDITOR)
+                  display_name="Editor", role="editor")
     db.add(editor); db.commit(); db.close()
     resp = client.post("/api/auth/login", json={"username": "editor", "password": "editor123"})
     assert resp.status_code == 200

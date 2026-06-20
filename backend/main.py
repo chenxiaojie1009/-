@@ -27,8 +27,8 @@ if sys.stderr is None:
     sys.stderr = sys.stdout
 from database import engine, get_db, Base
 from models import (
-    User, UserRole, Device, DeviceIP, DeviceMAC, DeviceAccount,
-    PasswordHistory, AuditLog, DeviceType
+    User, Device, DeviceIP, DeviceMAC, DeviceAccount,
+    PasswordHistory, AuditLog, SystemConfig, DeviceVisibility, beijing_now
 )
 from schemas import (
     LoginRequest, TokenResponse, UserCreate, UserResponse,
@@ -56,7 +56,7 @@ os.makedirs(BACKUP_DIR, exist_ok=True)
 def init_admin(db: Session):
     if not db.query(User).filter(User.username == "admin").first():
         db.add(User(username="admin", password_hash=hash_password("admin123"),
-                    display_name="Administrator", role=UserRole.ADMIN,
+                    display_name="Administrator", role="admin",
                     must_change_password=True))
         db.commit()
 
@@ -106,7 +106,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     token = create_access_token(data={"sub": user.id})
     write_audit(db, user.id, "login", "system", detail=f"用户 {user.username} 登录")
     return TokenResponse(access_token=token, username=user.username,
-                         display_name=user.display_name or user.username, role=user.role.value,
+                         display_name=user.display_name or user.username, role=user.role,
                          must_change_password=user.must_change_password)
 
 @app.get("/api/auth/me", response_model=UserResponse)
@@ -133,8 +133,11 @@ def list_users(db: Session = Depends(get_db), _: User = Depends(require_admin)):
 def create_user(body: UserCreate, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)):
     if db.query(User).filter(User.username == body.username).first():
         raise HTTPException(status_code=400, detail="用户名已存在")
-    try: role = UserRole(body.role)
-    except ValueError: raise HTTPException(status_code=400, detail="无效角色")
+    role = body.role
+    if role not in ("admin", "editor", "viewer"):
+        # Allow custom roles from config, but ensure it's not empty
+        if not role or not role.strip():
+            raise HTTPException(status_code=400, detail="无效角色")
     u = User(username=body.username, password_hash=hash_password(body.password),
              display_name=body.display_name or body.username, role=role,
              must_change_password=True)
@@ -152,8 +155,9 @@ def update_user(user_id: int, body: UserUpdate, db: Session = Depends(get_db),
         u.password_hash = hash_password(body.password)
         u.must_change_password = True
     if body.role is not None:
-        try: u.role = UserRole(body.role)
-        except ValueError: raise HTTPException(status_code=400, detail="无效角色")
+        if not body.role.strip():
+            raise HTTPException(status_code=400, detail="无效角色")
+        u.role = body.role
     if body.is_active is not None:
         if u.id == admin_user.id and body.is_active == False:
             raise HTTPException(status_code=400, detail="不可禁用自己")
@@ -178,9 +182,62 @@ def reset_user_password(user_id: int, body: dict, db: Session = Depends(get_db),
 def delete_user(user_id: int, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)):
     u = db.query(User).filter(User.id == user_id).first()
     if not u: raise HTTPException(status_code=404, detail="用户不存在")
-    if u.role == UserRole.ADMIN: raise HTTPException(status_code=400, detail="不可删除管理员")
+    if u.role == "admin": raise HTTPException(status_code=400, detail="不可删除管理员")
     db.delete(u); db.commit()
     write_audit(db, admin_user.id, "delete_user", "user", user_id, f"删除用户 {u.username}")
+    return {"ok": True}
+
+
+# ---- Config ----
+@app.get("/api/config/{key}")
+def get_config(key: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    items = db.query(SystemConfig).filter(SystemConfig.key == key).all()
+    return [{"id": i.id, "key": i.key, "value": i.value} for i in items]
+
+@app.post("/api/config/{key}")
+def add_config(key: str, body: dict, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    val = body.get("value", "")
+    if not val: raise HTTPException(status_code=400, detail="value 不能为空")
+    if db.query(SystemConfig).filter(SystemConfig.key == key, SystemConfig.value == val).first():
+        raise HTTPException(status_code=400, detail="已存在")
+    item = SystemConfig(key=key, value=val)
+    db.add(item); db.commit()
+    return {"ok": True, "id": item.id}
+
+@app.delete("/api/config/{item_id}")
+def delete_config(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    item = db.query(SystemConfig).filter(SystemConfig.id == item_id).first()
+    if not item: raise HTTPException(status_code=404, detail="不存在")
+    db.delete(item); db.commit()
+    return {"ok": True}
+
+
+# ---- Device Visibility ----
+@app.get("/api/devices/{device_id}/visibility")
+def get_device_visibility(device_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    rows = db.query(DeviceVisibility).filter(DeviceVisibility.device_id == device_id).all()
+    return [{"user_id": r.user_id} for r in rows]
+
+@app.post("/api/devices/{device_id}/visibility")
+def set_device_visibility(device_id: int, body: dict, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    # Clear existing
+    db.query(DeviceVisibility).filter(DeviceVisibility.device_id == device_id).delete()
+    for uid in body.get("user_ids", []):
+        db.add(DeviceVisibility(device_id=device_id, user_id=int(uid)))
+    db.commit()
+    return {"ok": True}
+
+@app.get("/api/users/{user_id}/devices")
+def get_user_devices(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    rows = db.query(DeviceVisibility).filter(DeviceVisibility.user_id == user_id).all()
+    return [{"device_id": r.device_id} for r in rows]
+
+@app.post("/api/users/{user_id}/devices")
+def set_user_devices(user_id: int, body: dict, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    db.query(DeviceVisibility).filter(DeviceVisibility.user_id == user_id).delete()
+    for did in body.get("device_ids", []):
+        db.add(DeviceVisibility(user_id=user_id, device_id=int(did)))
+    db.commit()
     return {"ok": True}
 
 
@@ -209,16 +266,23 @@ def _sync_ips_macs(device: Device, ips: list, macs: list, db: Session):
 @app.get("/api/devices", response_model=List[DeviceListItem])
 def list_devices(keyword: str = Query(""), device_type: str = Query(""),
                  page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
-                 db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+                 db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     q = db.query(Device)
     if keyword:
         kw = f"%{keyword}%"
         q = q.filter(Device.name.contains(kw) | Device.notes.contains(kw) | Device.location.contains(kw))
     if device_type: q = q.filter(Device.device_type == device_type)
+    # Role-based filtering: admin sees all, editor sees all, viewer sees only assigned
+    if current_user.role == "viewer":
+        visible_ids = db.query(DeviceVisibility.device_id).filter(
+            DeviceVisibility.user_id == current_user.id
+        ).subquery()
+        q = q.filter(Device.id.in_(visible_ids))
+
     devices = q.order_by(Device.updated_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return [DeviceListItem(
         id=d.id, name=d.name,
-        device_type=d.device_type.value if isinstance(d.device_type, DeviceType) else str(d.device_type),
+        device_type=d.device_type,
         ip_address=_first_ip(d), mac_address=_first_mac(d),
         account_count=db.query(func.count(DeviceAccount.id)).filter(DeviceAccount.device_id == d.id).scalar() or 0,
         updated_at=d.updated_at,
@@ -231,7 +295,7 @@ def get_device(device_id: int, db: Session = Depends(get_db), _: User = Depends(
     if not d: raise HTTPException(status_code=404, detail="设备不存在")
     return DeviceResponse(
         id=d.id, name=d.name,
-        device_type=d.device_type.value if isinstance(d.device_type, DeviceType) else str(d.device_type),
+        device_type=d.device_type,
         location=d.location, notes=d.notes, created_at=d.created_at, updated_at=d.updated_at,
         ips=[IPResponse(id=ip.id, address=ip.address, label=ip.label) for ip in d.ips],
         macs=[MACResponse(id=m.id, address=m.address, label=m.label) for m in d.macs],
@@ -242,9 +306,8 @@ def get_device(device_id: int, db: Session = Depends(get_db), _: User = Depends(
 @app.post("/api/devices", response_model=DeviceResponse)
 def create_device(body: DeviceCreate, request: Request, db: Session = Depends(get_db),
                   current_user: User = Depends(require_editor)):
-    try: dtype = DeviceType(body.device_type)
-    except ValueError: dtype = DeviceType.OTHER
-    d = Device(name=body.name, device_type=dtype, location=body.location, notes=body.notes)
+    d = Device(name=body.name, device_type=body.device_type or "其他",
+               location=body.location, notes=body.notes, created_by=current_user.id)
     db.add(d); db.flush()
     for ip in (body.ips or []): db.add(DeviceIP(device_id=d.id, address=ip.address, label=ip.label))
     for mac in (body.macs or []): db.add(DeviceMAC(device_id=d.id, address=mac.address, label=mac.label))
@@ -266,12 +329,11 @@ def update_device(device_id: int, body: DeviceUpdate, request: Request,
     if not d: raise HTTPException(status_code=404, detail="设备不存在")
     if body.name is not None: d.name = body.name
     if body.device_type is not None:
-        try: d.device_type = DeviceType(body.device_type)
-        except ValueError: pass
+        d.device_type = body.device_type
     if body.location is not None: d.location = body.location
     if body.notes is not None: d.notes = body.notes
     _sync_ips_macs(d, body.ips, body.macs, db)
-    d.updated_at = datetime.utcnow()
+    d.updated_at = beijing_now()
     db.commit(); db.refresh(d)
     ip = request.client.host if request.client else ""
     write_audit(db, current_user.id, "update", "device", d.id, f"更新设备 {d.name}", ip)
@@ -314,7 +376,7 @@ def update_account_password(account_id: int, body: DeviceAccountCreate, request:
     old_enc = a.password_encrypted
     a.password_encrypted = encrypt_password(body.password)
     a.notes = body.notes if body.notes else a.notes
-    a.updated_at = datetime.utcnow()
+    a.updated_at = beijing_now()
     db.add(PasswordHistory(account_id=a.id, old_password_hash=old_enc, changed_by=current_user.id,
            reason=body.notes or "密码变更"))
     db.commit(); db.refresh(a)
@@ -416,7 +478,7 @@ def export_devices(body: ExportRequest, request: Request, db: Session = Depends(
         row = 2
         for dev in devices:
             accounts = db.query(DeviceAccount).filter(DeviceAccount.device_id == dev.id).all()
-            dt = dev.device_type.value if isinstance(dev.device_type, DeviceType) else str(dev.device_type)
+            dt = dev.device_type
             ts = dev.updated_at.strftime("%Y-%m-%d %H:%M") if dev.updated_at else ""
             ips_str = ", ".join(ip.address for ip in dev.ips)
             macs_str = ", ".join(m.address for m in dev.macs)
@@ -437,6 +499,67 @@ def export_devices(body: ExportRequest, request: Request, db: Session = Depends(
         return StreamingResponse(output,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": "attachment; filename=device_list_" + datetime.now().strftime('%Y%m%d_%H%M%S') + ".xlsx"})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
+
+
+@app.post("/api/export/all")
+def export_all(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    try: import openpyxl; from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    except ImportError: raise HTTPException(status_code=500, detail="openpyxl 未安装")
+    try:
+        wb = openpyxl.Workbook()
+        hf = Font(bold=True, color="FFFFFF", size=11)
+        hfill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        ha = Alignment(horizontal="center", vertical="center")
+        tb = Border(left=Side(style="thin"), right=Side(style="thin"), top=Side(style="thin"), bottom=Side(style="thin"))
+
+        # Sheet 1: 密码列表
+        ws1 = wb.active; ws1.title = "密码列表"
+        headers1 = ["名称", "类型", "IP", "MAC", "位置", "账号", "密码", "备注", "更新时间"]
+        for col, h in enumerate(headers1, 1):
+            c = ws1.cell(row=1, column=col, value=h); c.font = hf; c.fill = hfill; c.alignment = ha; c.border = tb
+        row = 2
+        devices = db.query(Device).order_by(Device.name).all()
+        for dev in devices:
+            accounts = db.query(DeviceAccount).filter(DeviceAccount.device_id == dev.id).all()
+            ips_str = ", ".join(ip.address for ip in dev.ips)
+            macs_str = ", ".join(m.address for m in dev.macs)
+            ts = dev.updated_at.strftime("%Y-%m-%d %H:%M") if dev.updated_at else ""
+            if not accounts:
+                for col, val in enumerate([dev.name, dev.device_type, ips_str, macs_str, dev.location, "", "", dev.notes, ts], 1):
+                    ws1.cell(row=row, column=col, value=val).border = tb
+                row += 1
+            else:
+                for ac in accounts:
+                    pwd = decrypt_password(ac.password_encrypted)
+                    for col, val in enumerate([dev.name, dev.device_type, ips_str, macs_str, dev.location, ac.username, pwd, ac.notes or dev.notes, ts], 1):
+                        ws1.cell(row=row, column=col, value=val).border = tb
+                    row += 1
+        for i, w in enumerate([20, 12, 22, 22, 16, 14, 18, 30, 18], 1):
+            ws1.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+        # Sheet 2: 用户列表
+        ws2 = wb.create_sheet("用户列表")
+        headers2 = ["用户名", "显示名", "角色", "状态", "下次改密", "创建时间"]
+        for col, h in enumerate(headers2, 1):
+            c = ws2.cell(row=1, column=col, value=h); c.font = hf; c.fill = hfill; c.alignment = ha; c.border = tb
+        users = db.query(User).order_by(User.username).all()
+        for r, u in enumerate(users, 2):
+            vals = [u.username, u.display_name, u.role,
+                    "正常" if u.is_active else "禁用",
+                    "是" if u.must_change_password else "否",
+                    u.created_at.strftime("%Y-%m-%d %H:%M") if u.created_at else ""]
+            for col, val in enumerate(vals, 1):
+                ws2.cell(row=r, column=col, value=val).border = tb
+        for i, w in enumerate([16, 16, 12, 8, 10, 18], 1):
+            ws2.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+        output = io.BytesIO(); wb.save(output); output.seek(0)
+        write_audit(db, current_user.id, "export", "all", detail="导出全部数据")
+        return StreamingResponse(output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=export_all_" + beijing_now().strftime('%Y%m%d_%H%M%S') + ".xlsx"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
 
@@ -465,9 +588,7 @@ async def import_devices_xlsx(request: Request, file: UploadFile = File(...),
                 if not name: result.failed += 1; result.errors.append(f"第{i}行：名称为空"); continue
                 dev = db.query(Device).filter(Device.name == name).first()
                 if not dev:
-                    try: dt = DeviceType(dtype)
-                    except ValueError: dt = DeviceType.OTHER
-                    dev = Device(name=name, device_type=dt, location=loc, notes=notes)
+                    dev = Device(name=name, device_type=dtype or "其他", location=loc, notes=notes)
                     db.add(dev); db.flush()
                 for ip_addr in [x.strip() for x in ips_raw.split(",") if x.strip()]:
                     if not db.query(DeviceIP).filter(DeviceIP.device_id == dev.id, DeviceIP.address == ip_addr).first():
@@ -536,11 +657,11 @@ def get_dashboard(db: Session = Depends(get_db), _: User = Depends(get_current_u
     dc = db.query(func.count(Device.id)).scalar() or 0
     ac = db.query(func.count(DeviceAccount.id)).scalar() or 0
     uc = db.query(func.count(User.id)).scalar() or 0
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = beijing_now().replace(hour=0, minute=0, second=0, microsecond=0)
     tl = db.query(func.count(AuditLog.id)).filter(AuditLog.created_at >= today).scalar() or 0
     ts = {}
     for t, c in db.query(Device.device_type, func.count(Device.id)).group_by(Device.device_type).all():
-        ts[t.value if isinstance(t, DeviceType) else str(t)] = c
+        ts[str(t)] = c
     return {"device_count": dc, "account_count": ac, "user_count": uc, "today_logs": tl, "type_stats": ts}
 
 

@@ -1,11 +1,11 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Card, Form, Input, Select, Button, Space, Divider, message, Popconfirm, Typography } from "antd";
 import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
 const { Title } = Typography;
-const DEVICE_TYPES = ["服务器", "交换机", "纵加设备", "路由器", "防火墙", "存储设备", "其他"];
+const DEFAULT_TYPES = ["服务器", "交换机", "纵加设备", "路由器", "防火墙", "存储设备", "其他"];
 
 export default function DeviceForm() {
   const { id } = useParams();
@@ -13,7 +13,15 @@ export default function DeviceForm() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deviceTypes, setDeviceTypes] = useState<string[]>(DEFAULT_TYPES);
   const isEdit = !!id;
+
+  useEffect(() => {
+    api.get("/config/device_types").then(r => {
+      const vals = r.data?.map((i: any) => i.value) || [];
+      setDeviceTypes([...new Set([...DEFAULT_TYPES, ...vals])]);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (id) {
@@ -51,7 +59,6 @@ export default function DeviceForm() {
 
       if (isEdit) {
         await api.put("/devices/" + id, payload);
-        // Update account passwords individually
         for (const acc of values.accounts || []) {
           if (acc.password && acc.password.trim()) {
             if (acc._id) {
@@ -105,8 +112,17 @@ export default function DeviceForm() {
             <Form.Item name="name" label="设备名称" rules={[{ required: true }]} style={{ width: 260 }}>
               <Input placeholder="如：核心交换机-A01" />
             </Form.Item>
-            <Form.Item name="device_type" label="设备类型" rules={[{ required: true }]} style={{ width: 150 }}>
-              <Select options={DEVICE_TYPES.map((t) => ({ label: t, value: t }))} />
+            <Form.Item name="device_type" label="设备类型" rules={[{ required: true }]} style={{ width: 170 }}>
+              <Select
+                options={deviceTypes.map((t) => ({ label: t, value: t }))}
+                showSearch
+                onSearch={(val) => {
+                  if (val && !deviceTypes.includes(val)) {
+                    setDeviceTypes(prev => [...prev, val]);
+                  }
+                }}
+                placeholder="选择或输入新类型"
+              />
             </Form.Item>
           </Space>
           <Form.Item name="location" label="位置">
@@ -201,4 +217,3 @@ export default function DeviceForm() {
     </div>
   );
 }
-
