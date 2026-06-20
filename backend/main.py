@@ -18,7 +18,13 @@ if getattr(sys, 'frozen', False):
     FRONTEND_DIR = os.path.join(sys._MEIPASS, "frontend", "dist")
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    FRONTEND_DIR = os.path.join(BASE_DIR, "..", "frontend", "dist")
 
+# Redirect stdout/stderr for noconsole builds (uvicorn needs a valid fd)
+if sys.stdout is None:
+    sys.stdout = open(os.path.join(BASE_DIR, "server.log"), "a", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = sys.stdout
 from database import engine, get_db, Base
 from models import (
     User, UserRole, Device, DeviceIP, DeviceMAC, DeviceAccount,
@@ -146,6 +152,17 @@ def update_user(user_id: int, body: UserCreate, db: Session = Depends(get_db),
     db.commit(); db.refresh(u)
     write_audit(db, admin_user.id, "update_user", "user", u.id, f"更新用户 {u.username}")
     return u
+
+@app.put("/api/users/{user_id}/reset-password")
+def reset_user_password(user_id: int, body: dict, db: Session = Depends(get_db),
+                        admin_user: User = Depends(require_admin)):
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u: raise HTTPException(status_code=404, detail="用户不存在")
+    u.password_hash = hash_password(body["new_password"])
+    u.must_change_password = True
+    db.commit()
+    write_audit(db, admin_user.id, "reset_password", "user", u.id, f"重置用户 {u.username} 密码")
+    return {"ok": True}
 
 @app.delete("/api/users/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(get_db), admin_user: User = Depends(require_admin)):
