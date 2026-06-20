@@ -1,5 +1,5 @@
 """
-Device Manager Backend - FastAPI
+Password Manager Backend - FastAPI
 """
 import os, sys, re, io, shutil
 from datetime import datetime, timedelta
@@ -37,7 +37,7 @@ from auth import (
     create_access_token, get_current_user, require_admin, require_editor,
 )
 
-app = FastAPI(title="Device Manager", version="1.1.0")
+app = FastAPI(title="Password Manager", version="1.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 Base.metadata.create_all(bind=engine)
 
@@ -378,7 +378,7 @@ def export_devices(body: ExportRequest, request: Request, db: Session = Depends(
         q = db.query(Device)
         if body.device_ids: q = q.filter(Device.id.in_(body.device_ids))
         devices = q.order_by(Device.name).all()
-        wb = openpyxl.Workbook(); ws = wb.active; ws.title = "设备列表"
+        wb = openpyxl.Workbook(); ws = wb.active; ws.title = "密码列表"
         hf = Font(bold=True, color="FFFFFF", size=11)
         hfill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         ha = Alignment(horizontal="center", vertical="center")
