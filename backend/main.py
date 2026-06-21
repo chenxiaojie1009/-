@@ -690,6 +690,23 @@ def list_backups(_: User = Depends(require_admin)):
 @app.post("/api/backups")
 def create_backup(_: User = Depends(require_admin)): perform_backup(); return {"ok": True}
 
+@app.get("/api/backups/download/{filename}")
+def download_backup(filename: str, _: User = Depends(require_admin)):
+    bp = os.path.join(BACKUP_DIR, filename)
+    if not os.path.exists(bp): raise HTTPException(status_code=404, detail="备份不存在")
+    return FileResponse(bp, filename=filename, media_type="application/octet-stream")
+
+@app.post("/api/backups/restore")
+async def restore_upload(file: UploadFile = File(...), db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Manual restore from uploaded .db file"""
+    perform_backup()  # auto-backup current state first
+    engine.dispose()
+    contents = await file.read()
+    with open(os.path.join(BASE_DIR, "device_manager.db"), "wb") as f:
+        f.write(contents)
+    Base.metadata.create_all(bind=engine)
+    return {"ok": True, "message": "备份已还原，请重启服务以生效"}
+
 @app.post("/api/backups/{filename}/restore")
 def restore_backup(filename: str, db: Session = Depends(get_db), _: User = Depends(require_admin)):
     bp = os.path.join(BACKUP_DIR, filename)

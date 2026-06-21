@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, Button, Dropdown, Modal, Form, Input, theme, message, Grid } from 'antd';
 const { useBreakpoint } = Grid;
-import { DashboardOutlined, HistoryOutlined, AuditOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, TeamOutlined, LogoutOutlined, SettingOutlined, KeyOutlined } from '@ant-design/icons';
+import { DashboardOutlined, HistoryOutlined, AuditOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, TeamOutlined, LogoutOutlined, SettingOutlined, KeyOutlined, CloudServerOutlined } from '@ant-design/icons';
 import api from '../api/client';
 
 const { Header, Sider, Content } = Layout;
@@ -26,7 +26,7 @@ export default function AppLayout() {
     { key: '/', icon: <DashboardOutlined />, label: '设备列表' },
     { key: '/history', icon: <HistoryOutlined />, label: '密码历史' },
     { key: '/audit', icon: <AuditOutlined />, label: '审计日志' },
-    ...(user.role === 'admin' ? [{ key: '/users', icon: <TeamOutlined />, label: '用户管理' }] : []),
+    ...(user.role === 'admin' ? [{ key: '/users', icon: <TeamOutlined />, label: '用户管理' }, { key: '/backup', icon: <CloudServerOutlined />, label: '备份与还原' }] : []),
   ];
 
   const handleLogout = () => {

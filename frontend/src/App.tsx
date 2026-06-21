@@ -8,6 +8,7 @@ import DeviceForm from './pages/DeviceForm';
 import PasswordHistory from './pages/PasswordHistory';
 import AuditLog from './pages/AuditLog';
 import UserManagement from './pages/UserManagement';
+import BackupRestore from './pages/BackupRestore';
 
 function App() {
   return (
@@ -30,6 +31,7 @@ function App() {
             <Route path="/history" element={<PasswordHistory />} />
             <Route path="/audit" element={<AuditLog />} />
             <Route path="/users" element={<UserManagement />} />
+            <Route path="/backup" element={<BackupRestore />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
