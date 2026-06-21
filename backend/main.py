@@ -294,7 +294,7 @@ def _sync_ips_macs(device: Device, ips: list, macs: list, db: Session):
 
 
 # ---- Devices ----
-@app.get("/api/devices", response_model=List[DeviceListItem])
+@app.get("/api/devices")
 def list_devices(keyword: str = Query(""), device_type: str = Query(""),
                  page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
                  db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -309,15 +309,15 @@ def list_devices(keyword: str = Query(""), device_type: str = Query(""),
     if current_user.role in ("viewer", "editor"):
         q = q.filter(Device.is_network_involved == False)
 
-    devices = q.order_by(Device.updated_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return [DeviceListItem(
+    total = q.count(); devices = q.order_by(Device.updated_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"items": [DeviceListItem(
         id=d.id, name=d.name,
         device_type=d.device_type,
         ip_address=_first_ip(d), mac_address=_first_mac(d),
         account_count=db.query(func.count(DeviceAccount.id)).filter(DeviceAccount.device_id == d.id).scalar() or 0,
         is_network_involved=d.is_network_involved,
         updated_at=d.updated_at,
-    ) for d in devices]
+    ) for d in devices], "total": total}
 
 
 @app.get("/api/devices/{device_id}", response_model=DeviceResponse)

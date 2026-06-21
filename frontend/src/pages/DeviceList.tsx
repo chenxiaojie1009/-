@@ -17,6 +17,8 @@ export default function DeviceList() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [typeOptions, setTypeOptions] = useState<string[]>(["服务器","交换机","纵加设备","路由器","防火墙","存储设备","工作站","其他"]);
@@ -37,11 +39,12 @@ export default function DeviceList() {
   const fetchDevices = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get("/devices", { params: { keyword: search || undefined, device_type: typeFilter || undefined, page, page_size: 20 } });
-      setDevices(res.data);
+      const res = await api.get("/devices", { params: { keyword: search || undefined, device_type: typeFilter || undefined, page, page_size: pageSize } });
+      setDevices(res.data.items || []);
+      setTotal(res.data.total || 0);
     } catch { message.error("获取设备列表失败"); }
     finally { setLoading(false); }
-  }, [page, search, typeFilter]);
+  }, [page, pageSize, search, typeFilter]);
 
   useEffect(() => { fetchDevices(); }, [fetchDevices]);
 
@@ -166,7 +169,7 @@ export default function DeviceList() {
       ) : (
       <Table columns={columns} dataSource={devices} rowKey="id" loading={loading} style={{ marginTop: 16 }} scroll={{ x: 900 }}
         rowSelection={{ selectedRowKeys: selectedKeys, onChange: (keys) => setSelectedKeys(keys) }}
-        pagination={{ current: page, pageSize: 20, showSizeChanger: true, showTotal: (t) => "共 " + t + " 条", onChange: (p) => setPage(p) }} />
+        pagination={{ current: page, pageSize: pageSize, total: total, showSizeChanger: true, showTotal: (t: number) => "共 " + t + " 条", onChange: (p, ps) => { setPage(p); if (ps && ps !== pageSize) { setPageSize(ps); setPage(1); } } }} />
       )}
       <DeviceModal open={modalOpen} detailId={detailId} editId={null}
         onClose={() => { setModalOpen(false); setDetailId(null); }} />
