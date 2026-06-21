@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Table, Button, Input, Select, Space, Tag, Card, Popconfirm, message, Tooltip, Grid } from "antd";
+import { Table, Button, Input, Select, Space, Tag, Card, Popconfirm, message, Tooltip, Grid, Pagination } from "antd";
 const { useBreakpoint } = Grid;
 import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, ReloadOutlined, EyeOutlined, DownloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -165,6 +165,12 @@ export default function DeviceList() {
             </Card>
           ))}
           {!loading && devices.length === 0 && <div style={{ textAlign: "center", padding: 32, color: "#999" }}>暂无设备</div>}
+          {total > pageSize && (
+            <Pagination size="small" current={page} pageSize={pageSize} total={total}
+              showSizeChanger showTotal={(t: number) => `共 ${t} 条`}
+              onChange={(p, ps) => { setPage(p); if (ps !== pageSize) { setPageSize(ps); setPage(1); } }}
+              style={{ textAlign: "center", marginTop: 12 }} />
+          )}
         </div>
       ) : (
       <Table columns={columns} dataSource={devices} rowKey="id" loading={loading} style={{ marginTop: 16 }} scroll={{ x: 900 }}
