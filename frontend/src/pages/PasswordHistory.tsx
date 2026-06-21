@@ -58,7 +58,7 @@ export default function PasswordHistory() {
         </Space>
       </div>
       <Card>
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading}
+        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} scroll={{ x: 800 }}
           pagination={{ pageSize: 15, showTotal: (t: number) => `共 ${t} 条` }}
           locale={{ emptyText: "暂无密码修改记录" }} />
       </Card>

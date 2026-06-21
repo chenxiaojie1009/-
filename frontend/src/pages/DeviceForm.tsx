@@ -101,7 +101,7 @@ export default function DeviceForm() {
   };
 
   return (
-    <div style={{ maxWidth: 800, margin: "0 auto" }}>
+    <div style={{ maxWidth: "100%", width: "100%", padding: "0 8px", margin: "0 auto" }}>
       <Space style={{ marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/")}>返回</Button>
         <Title level={4} style={{ margin: 0 }}>{isEdit ? "编辑设备" : "添加设备"}</Title>

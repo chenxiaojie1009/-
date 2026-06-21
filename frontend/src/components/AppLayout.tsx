@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Button, Dropdown, Modal, Form, Input, theme, message } from 'antd';
+import { Layout, Menu, Button, Dropdown, Modal, Form, Input, theme, message, Grid } from 'antd';
+const { useBreakpoint } = Grid;
 import { DashboardOutlined, HistoryOutlined, AuditOutlined, UserOutlined, MenuFoldOutlined, MenuUnfoldOutlined, TeamOutlined, LogoutOutlined, SettingOutlined, KeyOutlined } from '@ant-design/icons';
 import api from '../api/client';
 
@@ -12,6 +13,8 @@ export default function AppLayout() {
   const [pwdForm] = Form.useForm();
   const navigate = useNavigate();
   const location = useLocation();
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
   const { token: themeToken } = theme.useToken();
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
@@ -62,6 +65,7 @@ export default function AppLayout() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider trigger={null} collapsible collapsed={collapsed} theme="dark" width={220}
+        breakpoint="lg" collapsedWidth={0} onBreakpoint={(b) => setCollapsed(b)}
         style={{ background: 'linear-gradient(180deg, #001529 0%, #002140 100%)' }}>
         <div style={{ height: 64, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
           <SettingOutlined style={{ fontSize: collapsed ? 20 : 24, color: '#1890ff' }} />
@@ -76,7 +80,7 @@ export default function AppLayout() {
             <Button type="text" icon={<UserOutlined />} style={{ fontSize: 14 }}>{user.display_name || user.username}</Button>
           </Dropdown>
         </Header>
-        <Content style={{ margin: 16, padding: 24, background: '#fff', borderRadius: themeToken.borderRadiusLG, minHeight: 280, overflow: 'auto' }}>
+        <Content style={{ margin: isMobile ? 4 : 16, padding: isMobile ? 8 : 24, background: '#fff', borderRadius: themeToken.borderRadiusLG, minHeight: 280, overflow: 'auto' }}>
           <Outlet />
         </Content>
       </Layout>

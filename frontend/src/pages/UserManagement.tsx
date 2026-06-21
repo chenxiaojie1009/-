@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, Popconfirm, message, Typography } from "antd";
+import { Table, Card, Button, Modal, Form, Input, Select, Space, Tag, Popconfirm, message, Typography, Grid } from "antd";
+const { useBreakpoint } = Grid;
 import { TeamOutlined, PlusOutlined, KeyOutlined, EditOutlined, DownloadOutlined, ImportOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
@@ -23,6 +24,8 @@ export default function UserManagement() {
   const [editForm] = Form.useForm();
   const [resetForm] = Form.useForm();
   const [roleOptions, setRoleOptions] = useState<Record<string, string>>({"admin":"管理员","editor":"编辑者","viewer":"查看者","operator":"运维者"});
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -160,7 +163,31 @@ export default function UserManagement() {
         </Space>
       </div>
       <Card>
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={{ pageSize: 15 }} locale={{ emptyText: "暂无用户" }} />
+        {isMobile ? (
+          <div>
+            {data.map(u => (
+              <Card key={u.id} size="small" style={{ marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{u.display_name || u.username}</div>
+                    <div style={{ fontSize: 12, color: "#888" }}>
+                      <Tag color={roleColors[u.role]}>{roleOptions[u.role] || u.role}</Tag>
+                      {u.is_active ? <Tag color="success">正常</Tag> : <Tag color="error">禁用</Tag>}
+                      {u.must_change_password && <Tag color="warning">需改密</Tag>}
+                    </div>
+                  </div>
+                  <Space size={4}>
+                    <Button size="small" onClick={() => { setEditUser(u); editForm.setFieldsValue({display_name:u.display_name,role:u.role,password:"",must_change_password:u.must_change_password}); setEditOpen(true); }}>编辑</Button>
+                    <Button size="small" onClick={() => { setResetUser(u); setResetOpen(true); }}>重置</Button>
+                  </Space>
+                </div>
+              </Card>
+            ))}
+            {!loading && data.length === 0 && <div style={{ textAlign: "center", padding: 32, color: "#999" }}>暂无用户</div>}
+          </div>
+        ) : (
+        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={{ pageSize: 15 }} locale={{ emptyText: "暂无用户" }} scroll={{ x: 800 }} />
+        )}
       </Card>
 
       {/* 添加用户 */}

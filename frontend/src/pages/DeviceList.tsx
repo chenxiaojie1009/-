@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Table, Button, Input, Select, Space, Tag, Card, Popconfirm, message, Tooltip } from "antd";
+import { Table, Button, Input, Select, Space, Tag, Card, Popconfirm, message, Tooltip, Grid } from "antd";
+const { useBreakpoint } = Grid;
 import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, ReloadOutlined, EyeOutlined, DownloadOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useNavigate } from "react-router-dom";
@@ -23,6 +24,8 @@ export default function DeviceList() {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const canEdit = user.role === "admin" || user.role === "editor";
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
 
   useEffect(() => {
     api.get("/config/device_types").then(r => {
@@ -130,9 +133,41 @@ export default function DeviceList() {
           </Space>
         </Space>
       </Card>
-      <Table columns={columns} dataSource={devices} rowKey="id" loading={loading} style={{ marginTop: 16 }}
+      {isMobile ? (
+        <div style={{ marginTop: 12 }}>
+          {devices.map(d => (
+            <Card key={d.id} size="small" style={{ marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>
+                    {d.is_network_involved && <Tag color="red" style={{ marginRight: 4 }}>涉网</Tag>}
+                    {d.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
+                    <Tag color={typeColors[d.device_type] || "default"}>{d.device_type}</Tag>
+                    {d.ip_address && <span> IP: {d.ip_address}</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#aaa" }}>
+                    账号: {d.account_count} · {new Date(d.updated_at).toLocaleString("zh-CN")}
+                  </div>
+                </div>
+                <Space size={4}>
+                  <Button size="small" onClick={() => { setDetailId(d.id); setModalOpen(true); }}>查看</Button>
+                  {canEdit && <Button size="small" onClick={() => navigate("/devices/" + d.id + "/edit")}>编辑</Button>}
+                  {canEdit && <Popconfirm title="确定删除？" onConfirm={() => handleDelete(d.id)}>
+                    <Button size="small" danger>删除</Button>
+                  </Popconfirm>}
+                </Space>
+              </div>
+            </Card>
+          ))}
+          {!loading && devices.length === 0 && <div style={{ textAlign: "center", padding: 32, color: "#999" }}>暂无设备</div>}
+        </div>
+      ) : (
+      <Table columns={columns} dataSource={devices} rowKey="id" loading={loading} style={{ marginTop: 16 }} scroll={{ x: 900 }}
         rowSelection={{ selectedRowKeys: selectedKeys, onChange: (keys) => setSelectedKeys(keys) }}
         pagination={{ current: page, pageSize: 20, showSizeChanger: true, showTotal: (t) => "共 " + t + " 条", onChange: (p) => setPage(p) }} />
+      )}
       <DeviceModal open={modalOpen} detailId={detailId} editId={null}
         onClose={() => { setModalOpen(false); setDetailId(null); }} />
     </div>
